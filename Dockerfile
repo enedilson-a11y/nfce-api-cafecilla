@@ -1,8 +1,12 @@
-FROM node:20-slim
+FROM node:22-slim
 
-# Instalar Java (necessário para xsd-schema-validator do nfewizard-io)
+# Instalar Java, Python e ferramentas de build (necessários para nfewizard-io)
 RUN apt-get update && apt-get install -y \
     default-jdk \
+    python3 \
+    python3-dev \
+    make \
+    g++ \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
