@@ -119,7 +119,7 @@ app.post('/emitir', async (req, res) => {
         indTot:   1
       },
       imposto: {
-        ICMS:   { ICMSSN400: { orig: 0, CSOSN: '400' } },
+        ICMS:   { ICMS40: { orig: 0, CST: '40' } },
         PIS:    { PISNT: { CST: '07' } },
         COFINS: { COFINSNT: { CST: '07' } }
       }
