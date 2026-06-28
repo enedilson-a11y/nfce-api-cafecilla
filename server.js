@@ -9,7 +9,7 @@ app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || 'mude-esta-chave';
 
-// Middleware de autenticação simples
+// Middleware de autenticação
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
   const key = req.headers['x-api-key'];
@@ -21,7 +21,7 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '3.0.0' });
+  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '4.0.0' });
 });
 
 // Mapeamento forma de pagamento → tPag
@@ -30,49 +30,37 @@ const FORMA_PAGAMENTO = {
   'debito': '04',
   'pix': '17',
   'dinheiro': '01',
-  '03': '03',
-  '04': '04',
-  '17': '17',
-  '01': '01'
+  '03': '03', '04': '04', '17': '17', '01': '01'
 };
 
 // Emissão de NFC-e
 app.post('/emitir', async (req, res) => {
-  const {
-    numero_nfce,
-    itens,
-    forma_pagamento,
-    valor_total,
-    data_emissao
-  } = req.body;
+  const { numero_nfce, itens, forma_pagamento, valor_total, data_emissao } = req.body;
 
-  const CERT_B64 = process.env.CERT_B64;
+  const CERT_B64  = process.env.CERT_B64;
   const CERT_SENHA = process.env.CERT_SENHA;
-  const CSC = process.env.CSC || '0d4a86666f50bba3c658b4f35524768c';
-  const ID_CSC = parseInt(process.env.ID_CSC || '1');
+  const CSC       = process.env.CSC  || '0d4a86666f50bba3c658b4f35524768c';
+  const ID_CSC    = parseInt(process.env.ID_CSC || '1');
 
-  if (!CERT_B64 || !CERT_SENHA) {
+  if (!CERT_B64 || !CERT_SENHA)
     return res.status(500).json({ sucesso: false, erro: 'Certificado não configurado (CERT_B64 / CERT_SENHA)' });
-  }
 
-  if (!numero_nfce || !itens || !itens.length || !forma_pagamento || !valor_total) {
+  if (!numero_nfce || !itens?.length || !forma_pagamento || !valor_total)
     return res.status(400).json({ sucesso: false, erro: 'Campos obrigatórios: numero_nfce, itens, forma_pagamento, valor_total' });
-  }
 
   const certPath = path.join('/tmp', `cert_${Date.now()}.pfx`);
 
   try {
-    // 1. Gravar certificado a partir do base64
-    const certBuffer = Buffer.from(CERT_B64, 'base64');
-    fs.writeFileSync(certPath, certBuffer);
-    console.log(`[emitir] Certificado gravado (${certBuffer.length} bytes)`);
+    // 1. Gravar certificado
+    fs.writeFileSync(certPath, Buffer.from(CERT_B64, 'base64'));
+    console.log(`[emitir] Certificado gravado`);
 
-    // 2. Importar NFeWizard (CJS)
-    const NFeWizard = require('nfewizard-io').default || require('nfewizard-io');
-    const nfeWizard = new NFeWizard();
+    // 2. Importar NFCEWizard do pacote correto
+    const { NFCEWizard } = require('@nfewizard/nfce');
+    const nfceWizard = new NFCEWizard();
 
-    // 3. Inicializar ambiente NFCe
-    await nfeWizard.NFCE_LoadEnvironment({
+    // 3. Carregar ambiente
+    await nfceWizard.NFE_LoadEnvironment({
       config: {
         dfe: {
           baixarXMLDistribuicao: false,
@@ -92,7 +80,7 @@ app.post('/emitir', async (req, res) => {
           CPFCNPJ: '61354970000180',
         },
         nfe: {
-          ambiente: 1, // 1=Produção
+          ambiente: 1,       // 1 = Produção
           versaoDF: '4.00',
           idCSC: ID_CSC,
           tokenCSC: CSC
@@ -105,144 +93,116 @@ app.post('/emitir', async (req, res) => {
       }
     });
 
-    // 4. Montar data de emissão em horário de Brasília
+    // 4. Data de emissão (Brasília)
     const dhEmi = data_emissao || (() => {
       const now = new Date();
-      const offset = -3 * 60;
-      const local = new Date(now.getTime() + offset * 60000);
-      return local.toISOString().slice(0, 19) + '-03:00';
+      const br  = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      return br.toISOString().slice(0, 19) + '-03:00';
     })();
 
-    // 5. Montar itens da NFC-e
+    // 5. Montar itens
     const det = itens.map((item, idx) => ({
       prod: {
-        cProd: String(item.codigo || idx + 1).padStart(8, '0'),
-        cEAN: 'SEM GTIN',
-        xProd: item.descricao.substring(0, 120).toUpperCase(),
-        NCM: String(item.ncm || '21011200').replace(/\D/g, ''),
-        CFOP: 5102,
-        uCom: item.unidade || 'UN',
-        qCom: parseFloat(item.quantidade) || 1,
-        vUnCom: parseFloat(item.valor_unitario).toFixed(10),
-        vProd: (parseFloat(item.quantidade || 1) * parseFloat(item.valor_unitario)).toFixed(2),
+        cProd:    String(item.codigo || idx + 1).padStart(8, '0'),
+        cEAN:     'SEM GTIN',
+        xProd:    item.descricao.substring(0, 120).toUpperCase(),
+        NCM:      String(item.ncm || '21011200').replace(/\D/g, ''),
+        CFOP:     5102,
+        uCom:     item.unidade || 'UN',
+        qCom:     parseFloat(item.quantidade) || 1,
+        vUnCom:   parseFloat(item.valor_unitario).toFixed(10),
+        vProd:    (parseFloat(item.quantidade || 1) * parseFloat(item.valor_unitario)).toFixed(2),
         cEANTrib: 'SEM GTIN',
-        uTrib: item.unidade || 'UN',
-        qTrib: parseFloat(item.quantidade) || 1,
-        vUnTrib: parseFloat(item.valor_unitario).toFixed(10),
-        indTot: 1
+        uTrib:    item.unidade || 'UN',
+        qTrib:    parseFloat(item.quantidade) || 1,
+        vUnTrib:  parseFloat(item.valor_unitario).toFixed(10),
+        indTot:   1
       },
       imposto: {
-        ICMS: {
-          ICMSSN400: {
-            orig: 0,
-            CSOSN: '400'
-          }
-        },
-        PIS: { PISNT: { CST: '07' } },
+        ICMS:   { ICMSSN400: { orig: 0, CSOSN: '400' } },
+        PIS:    { PISNT: { CST: '07' } },
         COFINS: { COFINSNT: { CST: '07' } }
       }
     }));
 
-    // 6. Calcular totais
+    // 6. Totais
     const vProd = det.reduce((acc, d) => acc + parseFloat(d.prod.vProd), 0);
-    const vNF = parseFloat(valor_total).toFixed(2);
+    const vNF   = parseFloat(valor_total).toFixed(2);
+    const tPag  = FORMA_PAGAMENTO[forma_pagamento.toLowerCase()] || '99';
+    const cNF   = String(Math.floor(Math.random() * 99999999)).padStart(8, '0');
 
-    // 7. Mapeamento pagamento
-    const tPag = FORMA_PAGAMENTO[forma_pagamento.toLowerCase()] || '99';
-
-    // 8. Gerar cNF aleatório (8 dígitos)
-    const cNF = String(Math.floor(Math.random() * 99999999)).padStart(8, '0');
-
-    // 9. Montar payload NFC-e
+    // 7. Payload NFC-e
     const payload = {
       indSinc: 1,
-      idLote: numero_nfce,
+      idLote:  numero_nfce,
       NFe: [{
         infNFe: {
           ide: {
-            cUF: 31, // MG
-            cNF,
-            natOp: 'VENDA DE MERCADORIA',
-            mod: 65,
-            serie: '1',
-            nNF: numero_nfce,
+            cUF: 31, cNF,
+            natOp:       'VENDA DE MERCADORIA',
+            mod:          65,
+            serie:        '1',
+            nNF:          numero_nfce,
             dhEmi,
-            tpNF: 1,
-            idDest: 1,
-            cMunFG: 3102050, // Alto Caparaó
-            tpImp: 4,
-            tpEmis: 1,
-            cDV: 0,
-            tpAmb: 1, // Produção
-            finNFe: 1,
-            indFinal: 1,
-            indPres: 1,
-            indIntermed: 0,
-            procEmi: 0,
-            verProc: '1.0.0'
+            tpNF:         1,
+            idDest:       1,
+            cMunFG:       3102050,
+            tpImp:        4,
+            tpEmis:       1,
+            cDV:          0,
+            tpAmb:        1,
+            finNFe:       1,
+            indFinal:     1,
+            indPres:      1,
+            indIntermed:  0,
+            procEmi:      0,
+            verProc:      '1.0.0'
           },
           emit: {
             CNPJCPF: '61354970000180',
-            xNome: 'CAFE CILLA LTDA',
-            xFant: 'CAFE CILLA',
+            xNome:   'CAFE CILLA LTDA',
+            xFant:   'CAFE CILLA',
             enderEmit: {
-              xLgr: 'RUA PRINCIPAL',
-              nro: 'S/N',
-              xBairro: 'CENTRO',
-              cMun: 3102050,
-              xMun: 'ALTO CAPARAO',
-              UF: 'MG',
-              CEP: '36985000',
-              cPais: 1058,
-              xPais: 'BRASIL',
-              fone: ''
+              xLgr:   'RUA PRINCIPAL',
+              nro:    'S/N',
+              xBairro:'CENTRO',
+              cMun:   3102050,
+              xMun:   'ALTO CAPARAO',
+              UF:     'MG',
+              CEP:    '36985000',
+              cPais:  1058,
+              xPais:  'BRASIL',
+              fone:   ''
             },
-            IE: '0052274120099',
-            CRT: 1 // Simples Nacional
+            IE:  '0052274120099',
+            CRT: 1
           },
           det,
           total: {
             ICMSTot: {
-              vBC: '0.00',
-              vICMS: '0.00',
-              vICMSDeson: '0.00',
-              vFCP: '0.00',
-              vBCST: '0.00',
-              vST: '0.00',
-              vFCPST: '0.00',
-              vFCPSTRet: '0.00',
+              vBC:'0.00', vICMS:'0.00', vICMSDeson:'0.00', vFCP:'0.00',
+              vBCST:'0.00', vST:'0.00', vFCPST:'0.00', vFCPSTRet:'0.00',
               vProd: vProd.toFixed(2),
-              vFrete: '0.00',
-              vSeg: '0.00',
-              vDesc: '0.00',
-              vII: '0.00',
-              vIPI: '0.00',
-              vIPIDevol: '0.00',
-              vPIS: '0.00',
-              vCOFINS: '0.00',
-              vOutro: '0.00',
-              vNF
+              vFrete:'0.00', vSeg:'0.00', vDesc:'0.00', vII:'0.00',
+              vIPI:'0.00', vIPIDevol:'0.00', vPIS:'0.00', vCOFINS:'0.00',
+              vOutro:'0.00', vNF
             }
           },
           transp: { modFrete: 9 },
           pag: {
-            detPag: [{
-              indPag: 1,
-              tPag,
-              vPag: vNF
-            }]
+            detPag: [{ indPag: 1, tPag, vPag: vNF }]
           }
         }
       }]
     };
 
-    // 10. Emitir
+    // 8. Transmitir
     console.log(`[emitir] Transmitindo NFC-e nº ${numero_nfce}...`);
-    const resultado = await nfeWizard.NFCE_Autorizacao(payload);
+    const resultado = await nfceWizard.NFCE_Autorizacao(payload);
     console.log(`[emitir] Retorno:`, JSON.stringify(resultado?.[0]?.protNFe?.infProt || {}));
 
     const infProt = resultado?.[0]?.protNFe?.infProt;
-    const xml = resultado?.[0]?.xml;
+    const xml     = resultado?.[0]?.xml;
 
     if (!infProt || infProt.cStat !== '100') {
       return res.json({
@@ -255,25 +215,22 @@ app.post('/emitir', async (req, res) => {
 
     return res.json({
       sucesso: true,
-      numero: numero_nfce,
+      numero:    numero_nfce,
       protocolo: infProt.nProt,
-      chave: infProt.chNFe,
-      xml: xml || null,
-      cStat: infProt.cStat,
-      xMotivo: infProt.xMotivo
+      chave:     infProt.chNFe,
+      xml:       xml || null,
+      cStat:     infProt.cStat,
+      xMotivo:   infProt.xMotivo
     });
 
   } catch (err) {
     console.error('[emitir] Erro:', err.message, err.stack?.split('\n').slice(0, 5).join('\n'));
-    return res.status(500).json({
-      sucesso: false,
-      erro: err.message
-    });
+    return res.status(500).json({ sucesso: false, erro: err.message });
   } finally {
     if (fs.existsSync(certPath)) fs.unlinkSync(certPath);
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ NFC-e API v3.0 rodando na porta ${PORT}`);
+  console.log(`✅ NFC-e API v4.0 rodando na porta ${PORT}`);
 });
