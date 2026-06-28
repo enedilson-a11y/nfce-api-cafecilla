@@ -196,7 +196,7 @@ app.post('/emitir', async (req, res) => {
               if (tPag === '03' || tPag === '04') {
                 det.card = {
                   tpIntegra: 2,        // 2 = não integrado (PDV sem TEF na NFC-e)
-                  CNPJ: '00000000000000',
+                  CNPJ: '01027058000191', // Cielo
                   tBand: '99',         // 99 = outros
                   cAut: '000000'
                 };
