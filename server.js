@@ -1,18 +1,18 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 const NFeWizard = require('nfewizard-io').default || require('nfewizard-io');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || 'mude-esta-chave';
 
 // Middleware de autenticação simples
 app.use((req, res, next) => {
+  if (req.path === '/health') return next();
   const key = req.headers['x-api-key'];
   if (key !== API_KEY) {
     return res.status(401).json({ erro: 'Não autorizado' });
@@ -20,9 +20,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check (sem auth)
+// Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla' });
+  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '2.0.0' });
 });
 
 // Mapeamento forma de pagamento → tPag
@@ -47,30 +47,26 @@ app.post('/emitir', async (req, res) => {
     data_emissao
   } = req.body;
 
-  // Configuração da empresa (fixa para Café Cilla)
-  const CERT_URL = process.env.CERT_URL;
+  const CERT_B64 = process.env.CERT_B64;
   const CERT_SENHA = process.env.CERT_SENHA;
   const CSC = process.env.CSC || '0d4a86666f50bba3c658b4f35524768c';
   const ID_CSC = parseInt(process.env.ID_CSC || '1');
 
-  if (!CERT_URL || !CERT_SENHA) {
-    return res.status(500).json({ sucesso: false, erro: 'Certificado não configurado (CERT_URL / CERT_SENHA)' });
+  if (!CERT_B64 || !CERT_SENHA) {
+    return res.status(500).json({ sucesso: false, erro: 'Certificado não configurado (CERT_B64 / CERT_SENHA)' });
   }
 
   if (!numero_nfce || !itens || !itens.length || !forma_pagamento || !valor_total) {
     return res.status(400).json({ sucesso: false, erro: 'Campos obrigatórios: numero_nfce, itens, forma_pagamento, valor_total' });
   }
 
-  const certPath = path.join('/tmp', `cafecilla_cert.pfx`);
+  const certPath = path.join('/tmp', `cafecilla_cert_${Date.now()}.pfx`);
 
   try {
-    // 1. Baixar certificado
-    console.log(`[emitir] Baixando certificado de ${CERT_URL}`);
-    const certResp = await fetch(CERT_URL);
-    if (!certResp.ok) throw new Error(`Falha ao baixar certificado: ${certResp.status}`);
-    const certBuffer = await certResp.buffer();
+    // 1. Gravar certificado a partir do base64
+    const certBuffer = Buffer.from(CERT_B64, 'base64');
     fs.writeFileSync(certPath, certBuffer);
-    console.log(`[emitir] Certificado salvo (${certBuffer.length} bytes)`);
+    console.log(`[emitir] Certificado gravado (${certBuffer.length} bytes)`);
 
     // 2. Inicializar NFeWizard
     const nfeWizard = new NFeWizard();
@@ -106,7 +102,12 @@ app.post('/emitir', async (req, res) => {
     });
 
     // 3. Montar data de emissão
-    const dhEmi = data_emissao || new Date().toISOString().replace('Z', '-03:00');
+    const now = new Date();
+    // Formata em horário de Brasília (UTC-3)
+    const dhEmi = data_emissao || (() => {
+      const br = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      return br.toISOString().replace('Z', '-03:00');
+    })();
 
     // 4. Montar itens da NFC-e
     const det = itens.map((item, idx) => ({
@@ -118,12 +119,12 @@ app.post('/emitir', async (req, res) => {
         CFOP: 5102,
         uCom: item.unidade || 'UN',
         qCom: parseFloat(item.quantidade) || 1,
-        vUnCom: parseFloat(item.valor_unitario).toFixed(2),
+        vUnCom: parseFloat(item.valor_unitario).toFixed(10),
         vProd: (parseFloat(item.quantidade || 1) * parseFloat(item.valor_unitario)).toFixed(2),
         cEANTrib: 'SEM GTIN',
         uTrib: item.unidade || 'UN',
         qTrib: parseFloat(item.quantidade) || 1,
-        vUnTrib: parseFloat(item.valor_unitario).toFixed(2),
+        vUnTrib: parseFloat(item.valor_unitario).toFixed(10),
         indTot: 1
       },
       imposto: {
@@ -234,7 +235,7 @@ app.post('/emitir', async (req, res) => {
     // 9. Emitir
     console.log(`[emitir] Transmitindo NFC-e nº ${numero_nfce}...`);
     const resultado = await nfeWizard.NFCE_Autorizacao(payload);
-    console.log(`[emitir] Retorno SEFAZ:`, JSON.stringify(resultado?.[0]?.protNFe?.infProt || {}));
+    console.log(`[emitir] Retorno:`, JSON.stringify(resultado?.[0]?.protNFe?.infProt || {}));
 
     const infProt = resultado?.[0]?.protNFe?.infProt;
     const xml = resultado?.[0]?.xml;
@@ -259,22 +260,16 @@ app.post('/emitir', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('[emitir] Erro:', err.message, err.stack);
+    console.error('[emitir] Erro:', err.message, err.stack?.split('\n').slice(0, 5).join('\n'));
     return res.status(500).json({
       sucesso: false,
       erro: err.message
     });
   } finally {
-    // Limpar certificado temporário
     if (fs.existsSync(certPath)) fs.unlinkSync(certPath);
   }
 });
 
-// Status do serviço SEFAZ
-app.get('/status-sefaz', async (req, res) => {
-  res.json({ mensagem: 'Use POST /emitir para emitir NFC-e' });
-});
-
 app.listen(PORT, () => {
-  console.log(`✅ NFC-e API rodando na porta ${PORT}`);
+  console.log(`✅ NFC-e API v2.0 rodando na porta ${PORT}`);
 });
