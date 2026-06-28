@@ -1,0 +1,19 @@
+{
+  "name": "nfce-api-cafecilla",
+  "version": "1.0.0",
+  "description": "API de emissão de NFC-e para Café Cilla via nfewizard-io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "nfewizard-io": "^1.1.8",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.3.1"
+  }
+}
