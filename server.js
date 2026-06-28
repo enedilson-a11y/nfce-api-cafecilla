@@ -88,7 +88,7 @@ app.post('/emitir', async (req, res) => {
         lib: {
           connection: { timeout: 30000 },
           useOpenSSL: false,
-          useForSchemaValidation: 'validateSchemaJsBased'
+          useForSchemaValidation: 'none'
         }
       }
     });
@@ -119,7 +119,7 @@ app.post('/emitir', async (req, res) => {
         indTot:   1
       },
       imposto: {
-        ICMS:   { ICMS40: { orig: 0, CST: '40' } },
+        ICMS:   { ICMSSN400: { orig: 0, CSOSN: '400' } },
         PIS:    { PISNT: { CST: '07' } },
         COFINS: { COFINSNT: { CST: '07' } }
       }
