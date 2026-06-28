@@ -190,7 +190,7 @@ app.post('/emitir', async (req, res) => {
           },
           transp: { modFrete: 9 },
           pag: {
-            detPag: [{ indPag: 1, tPag, vPag: vNF }]
+            detPag: [{ indPag: 0, tPag, vPag: vNF }]
           }
         }
       }]
