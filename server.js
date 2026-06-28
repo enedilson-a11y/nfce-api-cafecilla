@@ -172,7 +172,7 @@ app.post('/emitir', async (req, res) => {
               CEP:    '36985000',
               cPais:  1058,
               xPais:  'BRASIL',
-              fone:   ''
+              // fone omitido (opcional)
             },
             IE:  '0052274120099',
             CRT: 1
