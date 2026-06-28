@@ -244,6 +244,18 @@ app.post('/emitir', async (req, res) => {
 });
 
 
+
+app.get('/debug-methods', async (req, res) => {
+  try {
+    const { NFCEWizard } = require('@nfewizard/nfce');
+    const wizard = new NFCEWizard({ ambiente: 1, uf: 'MG', certificado: { pfxBase64: 'test', senha: 'test' }, useForSchemaValidation: 'none' });
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(wizard)).filter(m => m !== 'constructor');
+    return res.json({ methods });
+  } catch(err) {
+    return res.json({ erro: err.message });
+  }
+});
+
 // Consulta NFC-e por chave de acesso na SEFAZ-MG
 app.post('/consultar', async (req, res) => {
   const { chave } = req.body;
