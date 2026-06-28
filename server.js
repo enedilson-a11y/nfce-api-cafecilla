@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const NFeWizard = require('nfewizard-io').default || require('nfewizard-io');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -22,7 +21,7 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '2.0.0' });
+  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '3.0.0' });
 });
 
 // Mapeamento forma de pagamento → tPag
@@ -60,7 +59,7 @@ app.post('/emitir', async (req, res) => {
     return res.status(400).json({ sucesso: false, erro: 'Campos obrigatórios: numero_nfce, itens, forma_pagamento, valor_total' });
   }
 
-  const certPath = path.join('/tmp', `cafecilla_cert_${Date.now()}.pfx`);
+  const certPath = path.join('/tmp', `cert_${Date.now()}.pfx`);
 
   try {
     // 1. Gravar certificado a partir do base64
@@ -68,9 +67,12 @@ app.post('/emitir', async (req, res) => {
     fs.writeFileSync(certPath, certBuffer);
     console.log(`[emitir] Certificado gravado (${certBuffer.length} bytes)`);
 
-    // 2. Inicializar NFeWizard
+    // 2. Importar NFeWizard (CJS)
+    const NFeWizard = require('nfewizard-io').default || require('nfewizard-io');
     const nfeWizard = new NFeWizard();
-    await nfeWizard.NFE_LoadEnvironment({
+
+    // 3. Inicializar ambiente NFCe
+    await nfeWizard.NFCE_LoadEnvironment({
       config: {
         dfe: {
           baixarXMLDistribuicao: false,
@@ -90,26 +92,28 @@ app.post('/emitir', async (req, res) => {
           CPFCNPJ: '61354970000180',
         },
         nfe: {
-          ambiente: 1, // 1=Produção, 2=Homologação
+          ambiente: 1, // 1=Produção
           versaoDF: '4.00',
           idCSC: ID_CSC,
           tokenCSC: CSC
         },
         lib: {
-          connection: { timeout: 30000 }
+          connection: { timeout: 30000 },
+          useOpenSSL: false,
+          useForSchemaValidation: 'validateSchemaJsBased'
         }
       }
     });
 
-    // 3. Montar data de emissão
-    const now = new Date();
-    // Formata em horário de Brasília (UTC-3)
+    // 4. Montar data de emissão em horário de Brasília
     const dhEmi = data_emissao || (() => {
-      const br = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-      return br.toISOString().replace('Z', '-03:00');
+      const now = new Date();
+      const offset = -3 * 60;
+      const local = new Date(now.getTime() + offset * 60000);
+      return local.toISOString().slice(0, 19) + '-03:00';
     })();
 
-    // 4. Montar itens da NFC-e
+    // 5. Montar itens da NFC-e
     const det = itens.map((item, idx) => ({
       prod: {
         cProd: String(item.codigo || idx + 1).padStart(8, '0'),
@@ -139,17 +143,17 @@ app.post('/emitir', async (req, res) => {
       }
     }));
 
-    // 5. Calcular totais
+    // 6. Calcular totais
     const vProd = det.reduce((acc, d) => acc + parseFloat(d.prod.vProd), 0);
     const vNF = parseFloat(valor_total).toFixed(2);
 
-    // 6. Mapeamento pagamento
+    // 7. Mapeamento pagamento
     const tPag = FORMA_PAGAMENTO[forma_pagamento.toLowerCase()] || '99';
 
-    // 7. Gerar cNF aleatório (8 dígitos)
+    // 8. Gerar cNF aleatório (8 dígitos)
     const cNF = String(Math.floor(Math.random() * 99999999)).padStart(8, '0');
 
-    // 8. Montar payload NFC-e
+    // 9. Montar payload NFC-e
     const payload = {
       indSinc: 1,
       idLote: numero_nfce,
@@ -160,7 +164,7 @@ app.post('/emitir', async (req, res) => {
             cNF,
             natOp: 'VENDA DE MERCADORIA',
             mod: 65,
-            serie: 1,
+            serie: '1',
             nNF: numero_nfce,
             dhEmi,
             tpNF: 1,
@@ -232,7 +236,7 @@ app.post('/emitir', async (req, res) => {
       }]
     };
 
-    // 9. Emitir
+    // 10. Emitir
     console.log(`[emitir] Transmitindo NFC-e nº ${numero_nfce}...`);
     const resultado = await nfeWizard.NFCE_Autorizacao(payload);
     console.log(`[emitir] Retorno:`, JSON.stringify(resultado?.[0]?.protNFe?.infProt || {}));
@@ -271,5 +275,5 @@ app.post('/emitir', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ NFC-e API v2.0 rodando na porta ${PORT}`);
+  console.log(`✅ NFC-e API v3.0 rodando na porta ${PORT}`);
 });
