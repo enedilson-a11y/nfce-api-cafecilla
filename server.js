@@ -243,6 +243,43 @@ app.post('/emitir', async (req, res) => {
   }
 });
 
+
+// Consulta NFC-e por chave de acesso na SEFAZ-MG
+app.post('/consultar', async (req, res) => {
+  const { chave } = req.body;
+  if (!chave) return res.status(400).json({ sucesso: false, erro: 'chave obrigatória' });
+
+  const CERT_B64   = process.env.CERT_B64;
+  const CERT_SENHA = process.env.CERT_SENHA;
+  if (!CERT_B64 || !CERT_SENHA)
+    return res.status(500).json({ sucesso: false, erro: 'Certificado não configurado' });
+
+  const certPath = path.join('/tmp', `cert_consulta_${Date.now()}.pfx`);
+  try {
+    fs.writeFileSync(certPath, Buffer.from(CERT_B64, 'base64'));
+    console.log(`[consultar] Buscando chave ${chave}`);
+
+    const { NFCEWizard } = require('@nfewizard/nfce');
+    const wizard = new NFCEWizard({
+      ambiente: 1,
+      uf: 'MG',
+      certificado: { pfxPath: certPath, senha: CERT_SENHA },
+      useForSchemaValidation: 'none'
+    });
+
+    const resultado = await wizard.NFCE_ConsultaProtocolo({ chave_nfe: chave });
+    const xml = resultado?.xml || null;
+    const prot = resultado?.protNFe?.infProt || resultado?.retConsReciNFe || resultado;
+
+    return res.json({ sucesso: true, chave, xml, retorno: prot });
+  } catch (err) {
+    console.error('[consultar] Erro:', err.message);
+    return res.status(500).json({ sucesso: false, erro: err.message });
+  } finally {
+    if (fs.existsSync(certPath)) fs.unlinkSync(certPath);
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`✅ NFC-e API v4.0 rodando na porta ${PORT}`);
 });
