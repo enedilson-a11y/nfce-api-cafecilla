@@ -190,7 +190,19 @@ app.post('/emitir', async (req, res) => {
           },
           transp: { modFrete: 9 },
           pag: {
-            detPag: [{ indPag: 0, tPag, vPag: vNF }]
+            detPag: (() => {
+              const det = { indPag: 0, tPag, vPag: vNF };
+              // Cartão de crédito (03) e débito (04) exigem dados da operadora
+              if (tPag === '03' || tPag === '04') {
+                det.card = {
+                  tpIntegra: 2,        // 2 = não integrado (PDV sem TEF na NFC-e)
+                  CNPJ: '00000000000000',
+                  tBand: '99',         // 99 = outros
+                  cAut: '000000'
+                };
+              }
+              return [det];
+            })()
           }
         }
       }]
