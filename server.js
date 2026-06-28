@@ -28,7 +28,7 @@ app.get('/health', (req, res) => {
 const FORMA_PAGAMENTO = {
   'credito': '03',
   'debito': '04',
-  'pix': '17',
+  'pix': '20',
   'dinheiro': '01',
   '03': '03', '04': '04', '17': '17', '01': '01'
 };
