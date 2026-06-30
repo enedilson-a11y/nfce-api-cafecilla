@@ -292,6 +292,60 @@ app.post('/consultar', async (req, res) => {
   }
 });
 
+
+// Consulta XML de NFC-e por chave de acesso na SEFAZ-MG
+app.post('/buscar-xml', async (req, res) => {
+  const { chave } = req.body;
+  if (!chave) return res.status(400).json({ sucesso: false, erro: 'chave obrigatória' });
+
+  const CERT_B64   = process.env.CERT_B64;
+  const CERT_SENHA = process.env.CERT_SENHA;
+  if (!CERT_B64 || !CERT_SENHA)
+    return res.status(500).json({ sucesso: false, erro: 'Certificado não configurado' });
+
+  const certPath = path.join('/tmp', `cert_busca_${Date.now()}.pfx`);
+  try {
+    fs.writeFileSync(certPath, Buffer.from(CERT_B64, 'base64'));
+    const { NFCEWizard } = require('@nfewizard/nfce');
+    const wizard = new NFCEWizard({
+      ambiente: 1, uf: 'MG',
+      certificado: { pfxPath: certPath, senha: CERT_SENHA },
+      useForSchemaValidation: 'none'
+    });
+
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(wizard)).filter(m => m !== 'constructor');
+    console.log('[buscar-xml] Métodos:', methods.join(', '));
+
+    // Tentar cada variante de consulta
+    let resultado = null;
+    let metodoUsado = null;
+    for (const method of methods) {
+      if (method.toLowerCase().includes('consult')) {
+        try {
+          console.log(`[buscar-xml] Tentando: ${method}`);
+          resultado = await wizard[method]({ chave_nfe: chave, chNFe: chave, chnfe: chave });
+          metodoUsado = method;
+          break;
+        } catch(e) {
+          console.log(`[buscar-xml] ${method} falhou: ${e.message}`);
+        }
+      }
+    }
+
+    if (!resultado) {
+      return res.json({ sucesso: false, erro: 'Nenhum método de consulta funcionou', metodos: methods });
+    }
+
+    const xml = resultado?.xml || resultado?.xmlRetorno || resultado?.retConsSitNFe || null;
+    return res.json({ sucesso: !!xml, xml, metodoUsado, retorno: typeof xml === 'string' ? 'xml_string' : JSON.stringify(resultado).substring(0,200) });
+  } catch (err) {
+    console.error('[buscar-xml] Erro:', err.message);
+    return res.status(500).json({ sucesso: false, erro: err.message });
+  } finally {
+    if (fs.existsSync(certPath)) try { fs.unlinkSync(certPath); } catch(e) {}
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`✅ NFC-e API v4.0 rodando na porta ${PORT}`);
+  console.log(`✅ NFC-e API v4.1 rodando na porta ${PORT}`);
 });
