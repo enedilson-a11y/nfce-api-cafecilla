@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: nfce-api-cafecilla
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: API_KEY
+        value: cafecilla-nfce-2026
+      - key: CERT_SENHA
+        sync: false
+      - key: CERT_B64
+        sync: false
+      - key: CSC
+        value: 0d4a86666f50bba3c658b4f35524768c
+      - key: ID_CSC
+        value: "1"
+    healthCheckPath: /health
+    autoDeploy: true
