@@ -9,6 +9,15 @@ app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || 'mude-esta-chave';
 
+// CORS — permitir requisições do navegador (PDV THEOTITA)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
 // Middleware de autenticação
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
@@ -21,7 +30,7 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '4.0.0' });
+  res.json({ status: 'ok', servico: 'NFC-e API Café Cilla', versao: '4.1.0' });
 });
 
 // Mapeamento forma de pagamento → tPag
@@ -30,7 +39,7 @@ const FORMA_PAGAMENTO = {
   'debito': '04',
   'pix': '20',
   'dinheiro': '01',
-  '03': '03', '04': '04', '17': '17', '01': '01'
+  '03': '03', '04': '04', '17': '17', '01': '01', '20': '20'
 };
 
 // Emissão de NFC-e
